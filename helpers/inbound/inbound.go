@@ -163,6 +163,12 @@ func (email *ParsedEmail) parseAttachments(values map[string][]string) error {
 func (email *ParsedEmail) parseRawEmail(rawEmail string) error {
 	sections := strings.SplitN(rawEmail, "\n\n", 2)
 	email.parseHeaders(sections[0])
+
+	if len(sections) < 2 {
+		email.Body[email.Headers["Content-Type"]] = ""
+		return nil
+	}
+
 	raw, err := parseMultipart(strings.NewReader(sections[1]), email.Headers["Content-Type"])
 	if err != nil {
 		return err
