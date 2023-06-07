@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/http"
 	"strings"
 )
@@ -167,10 +168,34 @@ func (email *ParsedEmail) parseRawEmail(rawEmail string) error {
 		return err
 	}
 
+	// if Content-Type is not multipart just set the whole email
+	if raw == nil {
+		if len(sections) < 2 {
+			return nil
+		}
+
+		wholeEmail := sections[1]
+		// decode if needed
+		if email.Headers["Content-Transfer-Encoding"] == "quoted-printable" {
+			decoded, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(wholeEmail)))
+			if err != nil {
+				return err
+			}
+			wholeEmail = string(decoded)
+		}
+
+		email.Body[email.Headers["Content-Type"]] = wholeEmail
+		return nil
+	}
+
 	for {
 		emailPart, err := raw.NextPart()
-		if err == io.EOF {
-			return nil
+		// Check for both io.EOF and the wrapped multipart: NextPart: EOF
+		if err == io.EOF || (err != nil && err.Error() == "multipart: NextPart: EOF") {
+			break
+		}
+		if err != nil {
+			return err
 		}
 		rawEmailBody, err := parseMultipart(emailPart, emailPart.Header.Get("Content-Type"))
 		if err != nil {
@@ -179,8 +204,12 @@ func (email *ParsedEmail) parseRawEmail(rawEmail string) error {
 		if rawEmailBody != nil {
 			for {
 				emailBodyPart, err := rawEmailBody.NextPart()
-				if err == io.EOF {
+				// Check for both io.EOF and the wrapped multipart: NextPart: EOF
+				if err == io.EOF || (err != nil && err.Error() == "multipart: NextPart: EOF") {
 					break
+				}
+				if err != nil {
+					return err
 				}
 				header := emailBodyPart.Header.Get("Content-Type")
 				b, err := io.ReadAll(emailPart)
@@ -206,6 +235,7 @@ func (email *ParsedEmail) parseRawEmail(rawEmail string) error {
 			email.Body[header] = string(b)
 		}
 	}
+	return nil
 }
 
 func parseMultipart(body io.Reader, contentType string) (*multipart.Reader, error) {
