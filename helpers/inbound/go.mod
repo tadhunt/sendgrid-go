@@ -1,4 +1,4 @@
-module inbound
+module github.com/tadhunt/sendgrid-go/helpers/inbound
 
 go 1.19
 
